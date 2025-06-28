@@ -107,7 +107,7 @@ class PoseDetector:
         else:
             return 0
 
-    def findPercentage(self, img, minAngle, maxAngle, border_1_from, border_2_end,
+    def findPercentageAndAngle(self, img, minAngle, maxAngle, border_1_from, border_2_end,
                        p1, p2, p3, drawAngle=False, drawPercentage=True):
         """
         Calculates a percentage value (0-100%) based on the joint angle.
@@ -136,6 +136,51 @@ class PoseDetector:
                         cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 255), 2)
 
         return (percentage, angle)
+    
+    def findPercentageByTwoPoint(self, lmList, hand_index=1):
+        """
+        Вычисляет процент сгибания руки на основе нормализованного расстояния
+        между плечом и запястьем. Работает для правой руки.
+        
+        Аргументы:
+            lmList: список координат ключевых точек от MediaPipe. 
+                    Каждый элемент — [id, x, y].
+
+        Возвращает:
+            percentage: число от 0 до 100, где 100 — полностью согнута, 0 — вытянута.
+        """
+
+        if len(lmList) < 24:
+            return None  # не все точки найдены
+
+        # Координаты ключевых точек
+        if hand_index == 1:
+            shoulder = np.array(lmList[12][1:3])  # правое плечо
+            elbow = np.array(lmList[14][1:3])     # правый локоть
+            wrist = np.array(lmList[16][1:3])     # правая ладонь
+            hip = np.array(lmList[24][1:3])       # правое бедро
+        elif hand_index == 2:
+            shoulder = np.array(lmList[11][1:3])  # левое плечо
+            elbow = np.array(lmList[13][1:3])     # левый локоть
+            wrist = np.array(lmList[15][1:3])     # левая ладонь
+            hip = np.array(lmList[23][1:3])       # левое бедро
+
+        # Длина руки: плечо → локоть + локоть → ладонь
+        arm_len = np.linalg.norm(shoulder - elbow) + np.linalg.norm(elbow - wrist)
+
+        # Фактическое расстояние от плеча до ладони
+        shoulder_to_wrist = np.linalg.norm(shoulder - wrist)
+
+        # Нормализованное расстояние
+        norm_dist = shoulder_to_wrist / arm_len
+
+        # Переводим в процент: 100 — согнута, 0 — вытянута
+        percentage = np.interp(norm_dist, [0.4, 1.0], [100, 0])
+        percentage = int(np.clip(percentage, 0, 100))
+
+        return percentage
+
+    
 
 # --- Test block for debugging purposes ---
 def main():

@@ -5,15 +5,38 @@ import PoseModule as pm
 import numpy as np
 
 # Constants for window
-FRAME_WIDTH = 900
+FRAME_WIDTH = 1000
 FRAME_HEIGHT = 720
 COUNTDOWN_DURATION = 3
+
+def highlight_hand(img, lm_list, hand):
+    """Highlights chosen hand"""
+    try:
+        if hand == 1:
+            points = [12, 14, 16]
+        elif hand == 2:
+            points = [11, 13, 15]
+        else:
+            return
+
+        for i in range(len(points) - 1):
+            x1, y1 = lm_list[points[i]][1:]
+            x2, y2 = lm_list[points[i + 1]][1:]
+            cv2.line(img, (x1, y1), (x2, y2), (0, 255, 255), 6)
+
+        # Круги на суставах
+        for point in points:
+            x, y = lm_list[point][1:]
+            cv2.circle(img, (x, y), 10, (0, 255, 255), cv2.FILLED)
+
+    except Exception as e:
+        print("An error while hoghlighting hand:", e)
 
 def show_start_prompt(img):
     """Show blinking warning on the screen"""
     if int(time.time() * 2) % 2 == 0:
-        cv2.putText(img, "Press SPACE to start", (250, 100),
-                    cv2.FONT_HERSHEY_COMPLEX, 1.5, (0, 0, 255), 3)
+        cv2.putText(img, "Choose hand R/L and start", (50, 100),
+                    cv2.FONT_HERSHEY_COMPLEX, 1, (0, 0, 255), 3)
 
 def show_countdown(img, start_time):
     """Countdown"""
@@ -45,7 +68,7 @@ def draw_reps_circle(img, count):
     cv2.putText(img, text, (text_x, text_y), font, font_scale, (0, 0, 0), thickness)
 
 def draw_progress_bar(img, percentage):
-    """Progress which fills when the user pull up dembell"""
+    """Progress bar which fills by users pulling up dembell"""
     bar_x = img.shape[1] - 60
     bar_top = 200
     bar_bottom = 600
@@ -83,7 +106,7 @@ def calculate_reps(lm_list, percentage, direction, count):
     return direction, count
 
 def main():
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture("Pose-tracker/Videos/exercise.mkv")
     detector = pm.PoseDetector()
 
     direction = 1
@@ -93,6 +116,7 @@ def main():
     countdown_start_time = 0
     exercise_start_time = 0
     pTime = 0
+    chosen_hand = 0
 
     while True:
         # Read an image
@@ -112,16 +136,32 @@ def main():
         # Delay for showing frames
         key = cv2.waitKey(1)
 
-        # Logic for launching exercise and timer
+        # Logic for chosing hand and launcing exercise
         if not started:
             show_start_prompt(img)
             cv2.imshow("Image", img)
-            if key == 32:
+            
+            # Right hand
+            if key == ord("l") or key == ord("L"):
                 started = True
                 countdown_start_time = time.time()
+                chosen_hand = 2
+                      
+            # Left hand
+            if key == ord("r") or key == ord("R"):
+                started = True
+                countdown_start_time = time.time()
+                chosen_hand = 1
             elif key == ord('q'):
                 break
             continue
+        
+        if chosen_hand == 2:
+            cv2.putText(img, f"Chosen hand: Left", (25, 125),
+                    cv2.FONT_HERSHEY_COMPLEX, 1, (255, 0, 255), 3)
+        elif chosen_hand == 1:
+            cv2.putText(img, f"Chosen hand: Right", (25, 125),
+                    cv2.FONT_HERSHEY_COMPLEX, 1, (255, 0, 255), 3)
 
         if started and not countdown_done:
             if not show_countdown(img, countdown_start_time):
@@ -133,10 +173,16 @@ def main():
                 countdown_done = True
                 exercise_start_time = time.time()
 
-        # Calculating percentage + reps which were done my user
-        percentage, _ = detector.findPercentage(img, 50, 130, 100, 0, 12, 14, 16)
-        if lm_list and len(lm_list) > 16:
-            direction, count = calculate_reps(lm_list, percentage, direction, count)
+        percentage = 0
+        
+        if lm_list:
+            percentage = detector.findPercentageByTwoPoint(lm_list, chosen_hand)
+            if percentage is not None:
+                direction, count = calculate_reps(lm_list, percentage, direction, count)
+            else:
+                percentage = 0
+                
+            highlight_hand(img, lm_list, chosen_hand) # Highlight chosen hand
 
         # FPS
         cTime = time.time()
